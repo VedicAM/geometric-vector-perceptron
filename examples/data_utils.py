@@ -248,8 +248,8 @@ def nth_deg_adjacency(adj_mat, n=1, sparse=False):
         * n: int. degree of the output adjacency
         * sparse: bool. whether to use torch-sparse module
         Outputs: 
-        * edge_idxs: the ij positions of the adjacency matrix
-        * edge_attrs: the degree of connectivity (1 for neighs, 2 for neighs^2 )
+        * edge_idxs: ij positions of the adjacency matrix
+        * edge_attrs: degree of connectivity (1 for neighs, 2 for neighs^2, ... )
     """
     adj_mat = adj_mat.float()
     attr_mat = torch.zeros_like(adj_mat)
@@ -260,20 +260,21 @@ def nth_deg_adjacency(adj_mat, n=1, sparse=False):
             continue
 
         if i == 1 and sparse: 
-            # create sparse adj tensor
-            adj_mat = torch.sparse.FloatTensor( adj_mat.nonzero().t(),
-                                                adj_mat[ adj_mat!=0 ] ).to(adj_mat.device).coalesce()
-            idxs, vals = adj_mat.indices(), adj_mat.values()
+            idxs = adj_mat.nonzero().t()
+            vals = adj_mat[idxs[0], idxs[1]]
             m, k, n = 3 * [adj_mat.shape[0]] # (m, n) * (n, k) , but adj_mats are squared: m=n=k
 
         if sparse:
             idxs, vals = torch_sparse.spspmm(idxs, vals, idxs, vals, m=m, k=k, n=n)
+            vals = vals.bool().float()
             adj_mat = torch.zeros_like(attr_mat)
-            adj_mat[idxs[0], idxs[1]] = vals.bool().float()
+            adj_mat[idxs[0], idxs[1]] = vals
+            # sparse to dense is slower
+            # torch.sparse.FloatTensor(idxs, vals).to_dense()
         else:
             adj_mat = (adj_mat @ adj_mat).bool().float() 
 
-        attr_mat[ (adj_mat - attr_mat.bool().float()).bool() ] += i+1
+        attr_mat.masked_fill( (adj_mat - attr_mat.bool().float()).bool(), i+1 )
 
     return adj_mat, attr_mat
 
