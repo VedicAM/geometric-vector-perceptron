@@ -262,21 +262,25 @@ def nth_deg_adjacency(adj_mat, n=1, sparse=False):
         if i == 1 and sparse: 
             idxs = adj_mat.nonzero().t()
             vals = adj_mat[idxs[0], idxs[1]]
+            new_idxs = idxs.clone()
+            new_vals = vals.clone() 
             m, k, n = 3 * [adj_mat.shape[0]] # (m, n) * (n, k) , but adj_mats are squared: m=n=k
+        elif i == 1: 
+            new_adj_mat = adj_mat.clone()
 
         if sparse:
-            idxs, vals = torch_sparse.spspmm(idxs, vals, idxs, vals, m=m, k=k, n=n)
-            vals = vals.bool().float()
-            adj_mat = torch.zeros_like(attr_mat)
-            adj_mat[idxs[0], idxs[1]] = vals
+            new_idxs, new_vals = torch_sparse.spspmm(new_idxs, new_vals, idxs, vals, m=m, k=k, n=n)
+            new_vals = new_vals.bool().float()
+            new_adj_mat = torch.zeros_like(attr_mat)
+            new_adj_mat[new_idxs[0], new_idxs[1]] = new_vals
             # sparse to dense is slower
             # torch.sparse.FloatTensor(idxs, vals).to_dense()
         else:
-            adj_mat = (adj_mat @ adj_mat).bool().float() 
+            new_adj_mat = (new_adj_mat @ adj_mat).bool().float() 
 
-        attr_mat.masked_fill( (adj_mat - attr_mat.bool().float()).bool(), i+1 )
+        attr_mat.masked_fill( (new_adj_mat - attr_mat.bool().float()).bool(), i+1 )
 
-    return adj_mat, attr_mat
+    return new_adj_mat, attr_mat
 
 
 def prot_covalent_bond(seq, adj_degree=1, cloud_mask=None):
@@ -286,7 +290,7 @@ def prot_covalent_bond(seq, adj_degree=1, cloud_mask=None):
         * cloud_mask: mask selecting the present atoms.
         Outputs: edge_idxs
     """
-    # create or infer cloud_mask
+        # create or infer cloud_mask
     if cloud_mask is None: 
         cloud_mask = scn_cloud_mask(seq).bool()
     device, precise = cloud_mask.device, cloud_mask.type()
@@ -297,13 +301,13 @@ def prot_covalent_bond(seq, adj_degree=1, cloud_mask=None):
     # get poses + idxs from the dict with GVP_DATA - return all edges
     adj_mat = torch.zeros(idxs.amax()+14, idxs.amax()+14)
     for i,idx in enumerate(idxs):
-        # bond with next aa
-        extra = []
-        if i < idxs.shape[0]-1:
-            extra = [[2, (idxs[i+1]-idx).item()]]
-
-        bonds = idx + torch.tensor( GVP_DATA[seq[i]]['bonds'] + extra ).long().t() 
-        adj_mat[bonds[0], bonds[1]] = 1.
+        # offset by pos in chain ( intra-aa bonds + with next aa )
+        bonds = idx + torch.tensor( GVP_DATA[seq[i]]['bonds'] + [[2, 14]] ).t()
+        # delete link with next if not final
+        if i == idxs.shape[0]-1:
+            bonds = bonds[:, :-1]
+        # modify adj mat
+        adj_mat[bonds[0], bonds[1]] = 1
     # convert to undirected
     adj_mat = adj_mat + adj_mat.t()
     # do N_th degree adjacency
@@ -471,7 +475,7 @@ def encode_whole_bonds(x, x_format="coords", embedd_info={},
         # argsort by distance || *(-1) so min is first
         _, sorted_col_idxs = torch.topk(-masked_dist_mat, k=k, dim=-1)
         # cat idxs and repeat row idx to match number of column idx
-        sorted_col_idxs = rearrange(sorted_col_idxs[:, :k], '... n k -> ... (n k)')
+        sorted_col_idxs = rearrange(sorted_col_idxs, '... n k -> ... (n k)')
         sorted_row_idxs = torch.repeat_interleave( torch.arange(dist_mat.shape[0]).long(), repeats=k ).to(device)
         close_bond_idxs = torch.stack([ sorted_row_idxs, sorted_col_idxs ], dim=0)
         # move away from poses reserved for native
