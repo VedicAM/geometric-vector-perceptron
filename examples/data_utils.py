@@ -253,6 +253,7 @@ def nth_deg_adjacency(adj_mat, n=1, sparse=False):
     """
     adj_mat = adj_mat.float()
     attr_mat = torch.zeros_like(adj_mat)
+    new_adj_mat = adj_mat.clone()
         
     for i in range(n):
         if i == 0:
@@ -264,9 +265,7 @@ def nth_deg_adjacency(adj_mat, n=1, sparse=False):
             vals = adj_mat[idxs[0], idxs[1]]
             new_idxs = idxs.clone()
             new_vals = vals.clone() 
-            m, k, n = 3 * [adj_mat.shape[0]] # (m, n) * (n, k) , but adj_mats are squared: m=n=k
-        elif i == 1: 
-            new_adj_mat = adj_mat.clone()
+            m, k, n = 3 * [adj_mat.shape[0]] # (m, n) * (n, k) , but adj_mats are squared: m=n=k            
 
         if sparse:
             new_idxs, new_vals = torch_sparse.spspmm(new_idxs, new_vals, idxs, vals, m=m, k=k, n=n)
