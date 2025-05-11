@@ -149,7 +149,7 @@ def graph_laplacian_embedds(edges, eigen_k, center_idx=1, norm=False):
         for i,j in edges.t():
             laplace[i,j] = laplace[j,i] = -1 / (deg_mat[i,i] * deg_mat[j,j])**0.5
     # get laplacian basis - eigendecomposition - order importance by eigenvalue
-    e, v = torch.linalg.eigh(laplace)
+    e, v = torch.linalg.eigh(laplace, UPLO='L')
     idxs = torch.sort( e.abs(), descending=True)[1]
     # take embedds and center
     embedds = v[:, idxs[:eigen_k]]
